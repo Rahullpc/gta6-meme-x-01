@@ -20,8 +20,9 @@
 // things and refuses to continue until both are true:
 //   1. POST.json holds a real X post URL (the REPLACE_AFTER_POSTING
 //      placeholder is not one — post the meme first).
-//   2. meme.png is really a 1600x1600 PNG (size read from the IHDR
-//      header bytes, not trusted from any filename).
+//   2. meme.png is really a complete 1600x1600 PNG (size read from
+//      the IHDR header bytes, not trusted from any filename, and the
+//      IEND trailer at the end checked so a truncated file is caught).
 // Then it copies POST.json into the output directory and reports the
 // post URL. Any failure prints one clear line and exits 1.
 //
@@ -37,6 +38,8 @@ const BOT_DIR = process.env.MAKEFUN_BOT_DIR ?? "/bot";
 const OUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 const WANT_WIDTH = 1600;
 const WANT_HEIGHT = 1600;
+// A 1600x1600 meme PNG is ~1.5 MB; anything over 10 MB is not this meme.
+const MAX_PNG_BYTES = 10 * 1024 * 1024;
 
 // A real post address, e.g. https://x.com/0xvdantee/status/1234567890.
 const X_POST = /^https:\/\/(x\.com|twitter\.com)\/[^/]+\/status\/\d+$/;
@@ -54,6 +57,16 @@ function readPngSize(file: string): { width: number; height: number } {
   }
   if (buf.subarray(12, 16).toString("ascii") !== "IHDR") {
     fail(`${file} has no IHDR chunk — not a valid PNG.`);
+  }
+  if (buf.length > MAX_PNG_BYTES) {
+    fail(`${file} is ${buf.length} bytes, over the ${MAX_PNG_BYTES} byte limit.`);
+  }
+  // A file with a good header but no tail is truncated (cut-off
+  // download, interrupted write): the last 12 bytes of every PNG are
+  // the IEND chunk — zero length, "IEND", CRC 0xAE426082.
+  const iend = Buffer.from([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+  if (!buf.subarray(-12).equals(iend)) {
+    fail(`${file} has no IEND trailer — the file looks truncated. Regenerate it with gen_meme.py.`);
   }
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
