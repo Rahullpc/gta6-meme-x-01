@@ -71,6 +71,9 @@ function main() {
   if (meme.subarray(12, 16).toString("ascii") !== "IHDR") {
     fail("meme.png tidak punya chunk IHDR");
   }
+  if (meme.readUInt32BE(8) !== 13) {
+    fail("meme.png punya chunk IHDR dengan panjang yang salah (harus 13 byte)");
+  }
 
   const width = meme.readUInt32BE(16);
   const height = meme.readUInt32BE(20);
